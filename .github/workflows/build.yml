@@ -21,17 +21,14 @@ jobs:
         with:
           node-version: 24
 
-      - name: Build web dashboard
+      - name: Install Rust
         run: |
-          cd web
-          npm install
-          # 生成缺失的 API 类型文件（空桩，不影响运行时）
-          mkdir -p src/lib
-          echo "// auto-generated stub" > src/lib/api-generated.ts
-          echo "// auto-generated stub" > src/lib/api-descriptions.ts
-          echo "// auto-generated stub" > src/lib/api-enums.ts
-          # 跳过 tsc 类型检查，直接 vite 构建
-          npx vite build
+          rustup update stable
+          rustup component add rustfmt clippy
+
+      - name: Build web dashboard (cargo web build)
+        run: |
+          cargo web build
 
       - name: Install cross (prebuilt)
         run: |
@@ -39,7 +36,7 @@ jobs:
           chmod +x cross
           mv cross /usr/local/bin/
 
-      - name: Build zeroclaw
+      - name: Build zeroclaw (ARM64 musl)
         run: |
           cross build --profile dist \
             --target aarch64-unknown-linux-musl \
