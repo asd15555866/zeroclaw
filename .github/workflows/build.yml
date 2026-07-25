@@ -1,0 +1,53 @@
+name: Build ZeroClaw for ARM64 (musl + Web Dashboard)
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'build-*'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          repository: zeroclaw-labs/zeroclaw
+          ref: v0.8.3
+
+      - name: Setup Node.js (for web dashboard build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build web dashboard
+        run: |
+          cd web
+          npm install
+          npm run build
+
+      - name: Install cross (prebuilt)
+        run: |
+          curl -LsSf https://github.com/cross-rs/cross/releases/latest/download/cross-x86_64-unknown-linux-gnu.tar.gz | tar xz
+          chmod +x cross
+          mv cross /usr/local/bin/
+
+      - name: Build zeroclaw
+        run: |
+          cross build --profile dist \
+            --target aarch64-unknown-linux-musl \
+            --features "agent-runtime,gateway,acp-bridge,observability-prometheus,schema-export,embedded-web,sandbox-landlock,browser-native,channel-acp-server,channel-webhook,channel-email,channel-telegram,channel-filesystem,channel-mqtt,channel-wechat"
+
+      - name: Package
+        run: |
+          mkdir -p release
+          cp target/aarch64-unknown-linux-musl/dist/zeroclaw release/
+          tar czf zeroclaw-aarch64-musl-dashboard.tar.gz -C release zeroclaw
+          ls -lh zeroclaw-aarch64-musl-dashboard.tar.gz
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeroclaw-aarch64-musl-dashboard
+          path: zeroclaw-aarch64-musl-dashboard.tar.gz
