@@ -1,4 +1,4 @@
-name: Build ZeroClaw for ARM64 (musl + Web Dashboard)
+name: Build ZeroClaw for ARM64 (musl + Web Dashboard + 中文)
 
 on:
   workflow_dispatch:
@@ -12,23 +12,26 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          repository: zeroclaw-labs/zeroclaw
-          ref: v0.8.3
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
 
-      - name: Install Rust
+      - name: Build web dashboard
         run: |
-          rustup update stable
-          rustup component add rustfmt clippy
-
-      - name: Build web dashboard (cargo web build)
-        run: |
-          cargo web build
+          cd web
+          npm install
+          cat > src/lib/api-generated.ts << 'EOF'
+          export {};
+          EOF
+          cat > src/lib/api-descriptions.ts << 'EOF'
+          export function fieldHelp(_key: string): string { return ""; }
+          EOF
+          cat > src/lib/api-enums.ts << 'EOF'
+          export function enumMembers(_key: string): string[] { return []; }
+          EOF
+          npx vite build
 
       - name: Install cross (prebuilt)
         run: |
