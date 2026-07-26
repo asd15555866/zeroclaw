@@ -1,131 +1,105 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-GitHub Actions: AI 翻译字典未覆盖的剩余英文。
+"""AI 翻译字典未覆盖的剩余英文 — 零外部依赖，用 urllib 调 Google Translate"""
 
-原理：
-  1. 翻译脚本已运行 → 字典能翻的都翻了
-  2. 本脚本扫描修改过的文件 → 找出仍为英文的句子（含 5+ 个字母）
-  3. 调用 Google Translate 免费 API 逐句翻译
-  4. 替换回文件
-"""
-
-import re, os, sys, subprocess, time, glob
+import re, os, sys, time, glob, json, urllib.request, urllib.parse
 
 WORKSPACE = os.environ.get("GITHUB_WORKSPACE", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
-def install_translator():
-    """安装翻译库"""
-    subprocess.run([sys.executable, '-m', 'pip', 'install', 'deep-translator', '-q'],
-                   check=False, capture_output=True)
+def google_translate(text, source='en', target='zh-CN'):
+    """用 Google Translate 免费 API 翻译（无需 API Key）"""
+    # Google Translate 内部 API
+    url = "https://translate.googleapis.com/translate_a/single"
+    params = {
+        'client': 'gtx',
+        'sl': source,
+        'tl': target,
+        'dt': 't',
+        'q': text
+    }
+    full_url = url + '?' + urllib.parse.urlencode(params)
+    
+    for attempt in range(3):
+        try:
+            req = urllib.request.Request(full_url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read().decode())
+            # Google Translate returns [[[translated, original, ...]], ...]
+            parts = []
+            for segment in data[0]:
+                if segment[0]:
+                    parts.append(segment[0])
+            return ''.join(parts)
+        except Exception as e:
+            if attempt == 2:
+                return None
+            time.sleep(1)
+    return None
 
 
-def translate_batch(texts, max_retries=3):
-    """批量翻译英文→中文，带重试"""
-    from deep_translator import GoogleTranslator
-    
-    if not texts:
-        return {}
-    
-    # 去掉纯变量/代码片段
-    valid = []
-    for t in texts:
-        t_clean = t.strip()
-        if re.search(r'[a-zA-Z]{5,}', t_clean) and not re.search(r'[\u4e00-\u9fff]', t_clean):
-            valid.append(t_clean)
-    
-    if not valid:
-        return {}
-    
+def translate_batch(texts):
+    """逐条翻译"""
     result = {}
-    # Google Translate 逐条翻译
-    for text in valid:
-        for attempt in range(max_retries):
-            try:
-                translated = GoogleTranslator(source='en', target='zh-CN').translate(text)
-                result[text] = translated
-                break
-            except Exception as e:
-                if attempt == max_retries - 1:
-                    print(f"  [FAIL] '{text[:50]}...': {e}")
-                time.sleep(1)
-    
+    for text in texts:
+        t = text.strip()
+        if not re.search(r'[a-zA-Z]{5,}', t) or re.search(r'[\u4e00-\u9fff]', t):
+            continue
+        translated = google_translate(t)
+        if translated and translated != t:
+            result[t] = translated
+            print(f"  EN: {t[:80]}")
+            print(f"  ZH: {translated[:80]}")
+        time.sleep(0.3)  # 避免频率限制
     return result
 
 
-def extract_untranslated(filepath):
-    """从文件中提取仍未翻译的英文文本段"""
+def extract_texts(filepath):
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
     except:
         return []
     
-    untranslated = []
-    
-    # 模式 1: help:  "..." 中的全英文段落
+    items = []
+    # help:  "..." 全英文长句
     for m in re.finditer(r'help:\s+"(.*?)"', content, re.DOTALL):
-        text = m.group(1).strip()
-        # 分割续行并重新合并为句子
-        text = text.replace('\\\n', ' ').replace('\n', ' ')
-        # 按句子分割（. ! ? 后）
-        sentences = re.split(r'(?<=[.!?])\s+', text)
-        for s in sentences:
-            s = s.strip().strip('"').strip()
-            if re.search(r'[a-zA-Z]{10,}', s) and not re.search(r'[\u4e00-\u9fff]', s):
-                untranslated.append(('help', s))
+        t = m.group(1).replace('\n', ' ').strip()
+        for s in re.split(r'(?<=[.!?])\s+', t):
+            s = s.strip()
+            if re.search(r'[a-zA-Z]{15,}', s) and not re.search(r'[\u4e00-\u9fff]', s):
+                items.append(s)
     
-    # 模式 2: /// 文档注释中全英文的长句
+    # /// 长英文
     for m in re.finditer(r'/// (.+)', content):
-        text = m.group(1).strip()
-        if re.search(r'[a-zA-Z]{15,}', text) and not re.search(r'[\u4e00-\u9fff]', text):
-            untranslated.append(('doc', text))
+        t = m.group(1).strip()
+        if re.search(r'[a-zA-Z]{20,}', t) and not re.search(r'[\u4e00-\u9fff]', t):
+            items.append(t)
     
-    # 模式 3: description = "..." 中的全英文
-    for m in re.finditer(r'description\s*=\s*"([^"]+)"', content):
-        text = m.group(1).strip()
-        if re.search(r'[a-zA-Z]{10,}', text) and not re.search(r'[\u4e00-\u9fff]', text):
-            untranslated.append(('desc', text))
-    
-    # 去重
-    seen = set()
-    unique = []
-    for typ, text in untranslated:
-        if text not in seen:
-            seen.add(text)
-            unique.append((typ, text))
-    
-    return unique
+    return list(dict.fromkeys(items))
 
 
 def apply_translations(filepath, translations):
-    """把 AI 翻译的结果写回文件"""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             content = f.read()
     except:
         return 0
     
-    replaced = 0
-    for en_text, zh_text in translations.items():
-        if en_text in content and en_text != zh_text:
-            content = content.replace(en_text, zh_text)
-            replaced += 1
+    n = 0
+    for en, zh in translations.items():
+        if en in content and en != zh:
+            content = content.replace(en, zh)
+            n += 1
     
-    if replaced > 0:
+    if n:
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(content)
-    
-    return replaced
+    return n
 
 
 def main():
-    print("Installing translator...")
-    install_translator()
-    
-    # 只处理修改过的 .rs 文件
-    rs_files = glob.glob(os.path.join(WORKSPACE, 'crates', '**', '*.rs'), recursive=True)
+    print("Using Google Translate free API (no pip needed)")
     
     priority = [
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-config', 'src', 'sections.rs'),
@@ -133,34 +107,22 @@ def main():
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-config', 'src', 'schema.rs'),
     ]
     
-    print(f"\nScanning {len(rs_files)} files for untranslated English...")
-    
-    total_translated = 0
+    total = 0
     for fp in priority:
         if not os.path.exists(fp):
             continue
-        
-        untranslated = extract_untranslated(fp)
-        if not untranslated:
+        texts = extract_texts(fp)
+        if not texts:
             continue
         
         rel = fp.replace(WORKSPACE + os.sep, '')
-        print(f"\n{rel}: {len(untranslated)} untranslated strings")
+        print(f"\n{rel}: {len(texts)} untranslated strings")
         
-        # 只取英文文本部分
-        texts = [t for _, t in untranslated]
         translations = translate_batch(texts)
-        
-        if translations:
-            replaced = apply_translations(fp, translations)
-            total_translated += replaced
-            for en, zh in translations.items():
-                if en != zh:
-                    print(f"  EN: {en[:80]}...")
-                    print(f"  ZH: {zh[:80]}...")
-                    print()
+        n = apply_translations(fp, translations)
+        total += n
     
-    print(f"\nAI translated: {total_translated} strings")
+    print(f"\nAI translated: {total} strings")
 
 if __name__ == "__main__":
     main()
