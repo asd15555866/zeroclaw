@@ -71,6 +71,42 @@ DICT = {
     
     # 在字段描述中只翻译单字段路径的标识符
     "advanced": "高级","Enabled": "已启用","Disable": "禁用",
+
+    # ── 工具名映射（用户可见的工具名）──
+    "shell": "shell终端",
+    "file_read": "读文件",
+    "file_write": "写文件",
+    "file_edit": "编辑文件",
+    "glob_search": "glob搜索",
+    "content_search": "内容搜索",
+    "cron_add": "添加定时任务",
+    "cron_list": "列出定时任务",
+    "cron_remove": "删除定时任务",
+    "cron_update": "更新定时任务",
+    "cron_run": "运行定时任务",
+    "cron_runs": "定时任务历史",
+    "memory_store": "存储记忆",
+    "memory_recall": "召回记忆",
+    "memory_forget": "遗忘记忆",
+    "memory_export": "导出记忆",
+    "memory_purge": "清理记忆",
+    "schedule": "计划任务",
+    "spawn_subagent": "创建子代理",
+    "send_message_to_peer": "发送同伴消息",
+    "model_routing_config": "模型路由配置",
+    "todo_write": "写待办",
+    "sop_execute": "执行SOP",
+    "sop_list": "列出SOP",
+    "sop_status": "SOP状态",
+    "sop_advance": "推进SOP",
+    "sop_approve": "审批SOP",
+    "sop_workshop": "SOP编辑器",
+    "read_skill": "读技能",
+    "skill_tool": "技能工具",
+    "skill_manage": "管理技能",
+    "skill_http": "技能HTTP",
+    "model_switch": "切换模型",
+    "security_ops": "安全操作",
 }
 
 
@@ -150,6 +186,23 @@ def translate_file(filepath):
         content = re.sub(
             r'(description:\s*Some\()"([^"]+)"',
             lambda m: f'{m.group(1)}"{DICT.get(m.group(2), translate_word(m.group(2)))}"',
+            content
+        )
+
+    # ── 8. fn name(&self) -> &str { "tool_name" } —— 工具名 ──
+    if 'fn name(&self)' in content:
+        content = re.sub(
+            r'(fn name\(&self\)\s*->\s*&str\s*\{\s*)"([^"]+)"(\s*\})',
+            lambda m: f'{m.group(1)}"{DICT.get(m.group(2), m.group(2))}"{m.group(3)}',
+            content
+        )
+    
+    # ── 9. fn description(&self) -> &str { "长描述" } —— 工具描述 ──
+    # 只翻译字典里的整词，避免碎片化
+    if 'fn description(&self)' in content:
+        content = re.sub(
+            r'(fn description\(&self\)\s*->\s*&str\s*\{\s*)"([^"]+)"(\s*\})',
+            lambda m: f'{m.group(1)}"{translate_word(m.group(2))}"{m.group(3)}',
             content
         )
     
