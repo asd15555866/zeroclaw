@@ -1,4 +1,4 @@
-name: Build ZeroClaw for ARM64 (musl + Web Dashboard + 中文)
+name: Build ZeroClaw for ARM64 (中文 Web Dashboard + Rust 翻译)
 
 on:
   workflow_dispatch:
@@ -12,6 +12,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: 自动翻译 Rust 源码中的英文字段
+        run: python3 .github/translate_rust.py
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
