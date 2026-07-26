@@ -24,7 +24,13 @@ def google_translate(text, source='en', target='zh-CN'):
             for segment in data[0]:
                 if segment[0]:
                     parts.append(segment[0])
-            return ''.join(parts)
+            result = ''.join(parts)
+            # 清理污染字符
+            result = result.replace('\\\\', '').replace('\\"', '"').replace('\\', '')
+            # 如果还有反斜杠残留，退回原文
+            if '\\\\' in result:
+                return text
+            return result
         except Exception as e:
             if attempt == 2:
                 print(f"  [API-FAIL] {text[:50]}...: {e}")

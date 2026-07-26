@@ -261,92 +261,30 @@ def translate_file(filepath):
             content
         )
 
-    # ── 10. sections.rs: humanize_section_key 的 match arm ──
+    # ── 10. sections.rs: humanize_section_key 英文标签 → 中文 ──
     if 'pub fn humanize_section_key' in content:
-        labels_zh = {
-            'providers.models': '模型提供商',
-            'providers.routes': '模型路由',
-            'embeddings.routes': '嵌入路由',
-            'risk_profiles': '风险配置',
-            'runtime_profiles': '运行时配置',
-            'memory': '记忆',
-            'skills': '技能',
-            'skill_bundles': '技能集',
-            'providers.tts': '语音合成',
-            'providers.transcription': '语音识别',
-            'channels': '频道',
-            'hardware': '硬件',
-            'agents': '智能体',
-            'peer_groups': '同伴组',
-            'tunnel': '隧道',
-            'cron': '定时任务',
-            'mcp': 'MCP',
-            'mcp.servers': 'MCP 服务器',
-            'mcp.bundles': 'MCP 服务集',
-            'mcp_bundles': 'MCP 服务集',
-            'mcp_servers': 'MCP 服务器',
-            'knowledge.bundles': '知识库集',
-            'knowledge_bundles': '知识库集',
-            'backup': '备份',
-            'cloud_ops': '云端运维',
-            'conversational_ai': '对话 AI',
-            'cost': '费用',
-            'data_retention': '数据保留',
-            'eval': '评估',
-            'heartbeat': '心跳',
-            'hooks': '钩子',
-            'observability': '可观测性',
-            'onboard_state': '首次设置',
-            'peripherals': '外设',
-            'sop_approval': 'SOP 审批',
-            'escalation': '升级通知',
-            'unattended_upgrades': '自动升级',
-            'trust': '信任',
-            'pipeline': '管线',
-            'pacing': '限速',
-            'lifestate': '生命周期',
-            'file_download': '文件下载',
-            'file_upload': '文件上传',
-            'file_upload_bundle': '文件上传集',
-            'query_classification': '查询分类',
-            'reliability': '可靠性',
-            'cost_ops': '费用控制',
-            'runtime': '运行时',
-            'gateway': '网关',
-            'companion_network_peers': '同伴网络节点',
+        # 简单替换：原英文返回值 → 中文
+        # 只替换明确的 match arm，不搞复杂注入
+        section_labels = {
+            '"Model providers"': '"模型提供商"',
+            '"TTS providers"': '"语音合成"',
+            '"Transcription providers"': '"语音识别"',
         }
-        for key, label in labels_zh.items():
-            if f'"{key}" => return "{label}"' not in content:
-                content = content.replace(
-                    f'"{key}" => return',
-                    f'"{key}" => return "{label}".to_string(),\n        _ => {{}}\n    }}\n    #[allow(unreachable_code)]\n    fn __unused() {{}}',
-                    1
-                )
-                # Simpler approach: just replace if pattern exists
-                pattern_en = f'"{key}" => return "{label.replace("模型提供商", "Model providers").replace("频道", "Channels").replace("记忆", "Memory").replace("技能", "Skills")}"'
-                # Skip - too complex. Just inject new arm.
-        
-        # Direct injection of Chinese labels at start of match block
-        match_pos = content.find('match key {', content.find('pub fn humanize_section_key'))
-        if match_pos != -1:
-            insert_pos = match_pos + len('match key {') + 1
-            new_arms = '\n'
-            for key, label in list(labels_zh.items())[:20]:  # 只插入前20个避免太长
-                new_arms += f'        "{key}" => return "{label}".to_string(),\n'
-            if new_arms not in content:
-                content = content[:insert_pos] + new_arms + content[insert_pos:]
+        for en, zh in section_labels.items():
+            if en in content:
+                content = content.replace(en, zh)
     
     # ── 11. sections.rs: SectionGroup::label() ──
-    if 'pub const fn label(self) -> &' in content and 'Self::Foundation' in content:
-        content = content.replace('Self::Foundation => "Foundation"', 'Self::Foundation => "基础"')
-        content = content.replace('Self::Agent => "Agent"', 'Self::Agent => "智能体"')
-        content = content.replace('Self::MultiAgent => "Multi-agent"', 'Self::MultiAgent => "多智能体"')
-        content = content.replace('Self::Tools => "Tools"', 'Self::Tools => "工具"')
-        content = content.replace('Self::Integrations => "Integrations"', 'Self::Integrations => "集成"')
-        content = content.replace('Self::Network => "Network"', 'Self::Network => "网络"')
-        content = content.replace('Self::Storage => "Storage"', 'Self::Storage => "存储"')
-        content = content.replace('Self::Operations => "Operations"', 'Self::Operations => "运维"')
-        content = content.replace('Self::Other => "Other"', 'Self::Other => "其他"')
+    if 'Self::Foundation =>' in content:
+        content = content.replace('=> "Foundation"', '=> "基础"')
+        content = content.replace('=> "Agent"', '=> "智能体"')
+        content = content.replace('=> "Multi-agent"', '=> "多智能体"')
+        content = content.replace('=> "Tools"', '=> "工具"')
+        content = content.replace('=> "Integrations"', '=> "集成"')
+        content = content.replace('=> "Network"', '=> "网络"')
+        content = content.replace('=> "Storage"', '=> "存储"')
+        content = content.replace('=> "Operations"', '=> "运维"')
+        content = content.replace('=> "Other"', '=> "其他"')
     
     if content != original:
         with open(filepath, 'w', encoding='utf-8') as f:
