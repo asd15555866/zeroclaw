@@ -102,7 +102,27 @@ def main():
             print(f"  →    {translated[:60]}...")
             return f'{m.group(1)}"{translated}"'
         
-        content = re.sub(r'(description\s*=\s+)"([^"]+)"', repl_desc, content)
+        content = re.sub(r'(description\s*=\s*)"([^"]{50,})"', repl_desc, content)
+        
+        # ── 4. fn description(&self) -> &str { "..." } ──
+        def repl_fn_desc(m):
+            text = m.group(2)
+            if re.search(r'[\u4e00-\u9fff]', text):
+                return m.group(0)
+            if not re.search(r'[a-zA-Z]{15,}', text):
+                return m.group(0)
+            translated = google_translate(text)
+            if not re.search(r'[\u4e00-\u9fff]', translated):
+                return m.group(0)
+            print(f"  tool: {text[:60]}...")
+            print(f"  →     {translated[:60]}...")
+            return f'{m.group(1)}"{translated}"'
+        
+        content = re.sub(
+            r'(fn description\(&self\)\s*->\s*&str\s*\{\s*)"([^"]+)"(\s*\})',
+            repl_fn_desc,
+            content
+        )
         
         if content != original:
             with open(fp, 'w', encoding='utf-8') as f:
