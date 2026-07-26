@@ -182,10 +182,17 @@ def translate_file(filepath):
     original = content
     
     # ── 1. help:  "..." ── (sections.rs, presets.rs)
+    # 只替换已知词组（完整匹配），不逐词翻译（避免产生中英混合碎句）
+    # 完整句子的翻译交给 AI 兜底步骤
     if 'help:' in content:
+        def translate_help_only_phrases(text):
+            for en, zh in sorted(DICT.items(), key=lambda x: -len(x[0])):
+                if ' ' in en and len(en.split()) >= 3 and en in text:
+                    text = text.replace(en, zh)
+            return text or text
         content = re.sub(
             r'(help:\s+)"(.*?)"\s*,',
-            lambda m: f'{m.group(1)}"{translate_text(m.group(2))}",',
+            lambda m: f'{m.group(1)}"{translate_help_only_phrases(m.group(2))}",',
             content, flags=re.DOTALL
         )
     
