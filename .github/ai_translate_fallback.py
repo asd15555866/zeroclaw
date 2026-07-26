@@ -48,10 +48,17 @@ def main():
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-runtime', 'src', 'tools'),
     ]
     
+    # 展开目录为文件列表
+    file_list = []
     for fp in targets:
-        if not os.path.exists(fp):
-            continue
-        
+        if os.path.isdir(fp):
+            for f in sorted(os.listdir(fp)):
+                if f.endswith('.rs'):
+                    file_list.append(os.path.join(fp, f))
+        elif fp.endswith('.rs'):
+            file_list.append(fp)
+    
+    for fp in file_list:
         with open(fp, 'r', encoding='utf-8') as f:
             content = f.read()
         
