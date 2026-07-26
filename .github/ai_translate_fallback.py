@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""AI 翻译长句 help://// 注释 — 零外部依赖"""
+"""AI 翻译 help://// 注释 + 工具描述 — 安全转义，不破坏 Rust 语法"""
 
 import re, os, sys, time, json, urllib.request, urllib.parse
 
 WORKSPACE = os.environ.get("GITHUB_WORKSPACE", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def safe_escape(text):
+    """用 json.dumps 获得安全转义，再去掉外层引号"""
+    return json.dumps(text, ensure_ascii=False)[1:-1]
 
 
 def google_translate(text, source='en', target='zh-CN'):
@@ -24,16 +29,12 @@ def google_translate(text, source='en', target='zh-CN'):
             for segment in data[0]:
                 if segment[0]:
                     parts.append(segment[0])
-            result = ''.join(parts)
-            # 清理污染字符
-            result = result.replace('\\\\', '').replace('\\"', '"').replace('\\', '')
-            # 如果还有反斜杠残留，退回原文
-            if '\\\\' in result:
+            result = ''.join(parts).strip()
+            if not re.search(r'[\u4e00-\u9fff]', result):
                 return text
             return result
-        except Exception as e:
+        except:
             if attempt == 2:
-                print(f"  [API-FAIL] {text[:50]}...: {e}")
                 return text
             time.sleep(2)
     return text
@@ -44,6 +45,7 @@ def main():
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-config', 'src', 'sections.rs'),
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-config', 'src', 'presets.rs'),
         os.path.join(WORKSPACE, 'crates', 'zeroclaw-config', 'src', 'schema.rs'),
+        os.path.join(WORKSPACE, 'crates', 'zeroclaw-runtime', 'src', 'tools'),
     ]
     
     for fp in targets:
@@ -57,28 +59,26 @@ def main():
         rel = fp.replace(WORKSPACE + os.sep, '')
         print(f"\n=== {rel} ===")
         
-        # ── 1. help:  "..." 多行 ──
+        # ── 1. help:  "..." → AI 翻译 ──
         def repl_help(m):
             text = m.group(2)
-            # 如果已经是中文，跳过
             if re.search(r'[\u4e00-\u9fff]', text):
                 return m.group(0)
-            # 折叠换行符成一个段落（保持 Rust 字符串拼接）
-            flat = text.replace('\\n', ' ').replace('\n', ' ')
-            flat = flat.replace('\\\"', '"').strip()
+            # 合并多行
+            flat = text.replace('\\\n', ' ').replace('\n', ' ').replace('\\"', '"').strip()
             if not re.search(r'[a-zA-Z]{10,}', flat):
                 return m.group(0)
             translated = google_translate(flat)
-            # 如果翻译失败（无中文），保留原文
-            if not re.search(r'[\u4e00-\u9fff]', translated):
+            if translated == flat or translated == text:
                 return m.group(0)
+            escaped = safe_escape(translated)
             print(f"  help: {flat[:60]}...")
-            print(f"  →   {translated[:60]}...")
-            return f'{m.group(1)}"{translated}"'
+            print(f"  →    {translated[:60]}...")
+            return f'{m.group(1)}"{escaped}"'
         
-        content = re.sub(r'(help:\s+)"(.*?)"\s*,', repl_help, content, flags=re.DOTALL)
+        content = re.sub(r'(help:\s+)"(.*?)"(\s*,)', repl_help, content, flags=re.DOTALL)
         
-        # ── 2. /// 文档注释（中文优先跳过）──
+        # ── 2. /// 文档注释 → AI 翻译 ──
         def repl_doc(m):
             text = m.group(1).strip()
             if re.search(r'[\u4e00-\u9fff]', text):
@@ -86,31 +86,16 @@ def main():
             if not re.search(r'[a-zA-Z]{15,}', text):
                 return m.group(0)
             translated = google_translate(text)
-            if not re.search(r'[\u4e00-\u9fff]', translated):
+            if translated == text:
                 return m.group(0)
+            escaped = safe_escape(translated)
             print(f"  doc:  {text[:60]}...")
             print(f"  →    {translated[:60]}...")
-            return f'/// {translated}'
+            return f'/// {escaped}'
         
         content = re.sub(r'/// (.+)', repl_doc, content)
         
-        # ── 3. description = "..." （长句） ──
-        def repl_desc(m):
-            text = m.group(2)
-            if re.search(r'[\u4e00-\u9fff]', text):
-                return m.group(0)
-            if len(text) < 50 or not re.search(r'[a-zA-Z]{10,}', text):
-                return m.group(0)
-            translated = google_translate(text)
-            if not re.search(r'[\u4e00-\u9fff]', translated):
-                return m.group(0)
-            print(f"  desc: {text[:60]}...")
-            print(f"  →    {translated[:60]}...")
-            return f'{m.group(1)}"{translated}"'
-        
-        content = re.sub(r'(description\s*=\s*)"([^"]{50,})"', repl_desc, content)
-        
-        # ── 4. fn description(&self) -> &str { "..." } ──
+        # ── 3. fn description() { "..." } → AI 翻译 ──
         def repl_fn_desc(m):
             text = m.group(2)
             if re.search(r'[\u4e00-\u9fff]', text):
@@ -118,24 +103,24 @@ def main():
             if not re.search(r'[a-zA-Z]{15,}', text):
                 return m.group(0)
             translated = google_translate(text)
-            if not re.search(r'[\u4e00-\u9fff]', translated):
+            if translated == text:
                 return m.group(0)
+            escaped = safe_escape(translated)
             print(f"  tool: {text[:60]}...")
-            print(f"  →     {translated[:60]}...")
-            return f'{m.group(1)}"{translated}"'
+            print(f"  →    {translated[:60]}...")
+            return f'{m.group(1)}"{escaped}"{m.group(3)}'
         
         content = re.sub(
             r'(fn description\(&self\)\s*->\s*&str\s*\{\s*)"([^"]+)"(\s*\})',
-            repl_fn_desc,
-            content
+            repl_fn_desc, content
         )
         
         if content != original:
             with open(fp, 'w', encoding='utf-8') as f:
                 f.write(content)
-            print(f"  ✅ {rel} 已更新")
+            print(f"  OK updated")
         else:
-            print(f"  ⏭ {rel} 无变化")
+            print(f"  (no changes)")
 
 if __name__ == "__main__":
     main()
