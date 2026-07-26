@@ -81,7 +81,7 @@ def main():
             escaped = safe_escape(translated)
             print(f"  help: {flat[:60]}...")
             print(f"  →    {translated[:60]}...")
-            return f'{m.group(1)}"{escaped}"'
+            return f'{m.group(1)}"{escaped}"{m.group(3)}'
         
         content = re.sub(r'(help:\s+)"(.*?)"(\s*,)', repl_help, content, flags=re.DOTALL)
         
