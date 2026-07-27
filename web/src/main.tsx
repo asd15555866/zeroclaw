@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { basePath } from './lib/basePath';
 import './index.css';
+import './lib/apply-zh';
 
 const unsupportedBrowser =
   document.documentElement.getAttribute('data-unsupported-browser') === '1';
