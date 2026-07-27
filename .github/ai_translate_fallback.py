@@ -85,22 +85,52 @@ def main():
         
         content = re.sub(r'(help:\s+)"(.*?)"(\s*,)', repl_help, content, flags=re.DOTALL)
         
-        # ── 2. /// 文档注释 → AI 翻译 ──
-        def repl_doc(m):
-            text = m.group(1).strip()
-            if re.search(r'[\u4e00-\u9fff]', text):
-                return m.group(0)
-            if not re.search(r'[a-zA-Z]{15,}', text):
-                return m.group(0)
-            translated = google_translate(text)
-            if translated == text:
-                return m.group(0)
+        # ── 2. /// 文档注释 → 合并多行为段落，AI 整段翻译 ──
+        # 先把连续 /// 行合并为段落
+        doc_blocks = re.split(r'\n(?!/// )', content)  # 按非doc行分割
+        new_blocks = []
+        for block in doc_blocks:
+            if not block.strip():
+                new_blocks.append(block)
+                continue
+            
+            lines = block.split('\n')
+            if len(lines) < 2 or not all(l.strip().startswith('///') for l in lines if l.strip()):
+                new_blocks.append(block)
+                continue
+            
+            # 合并所有 /// 行为段落
+            merged = ' '.join(re.sub(r'^///\s*', '', l.strip()) for l in lines if l.strip().startswith('///'))
+            if re.search(r'[\u4e00-\u9fff]', merged) or not re.search(r'[a-zA-Z]{20,}', merged):
+                new_blocks.append(block)
+                continue
+            
+            translated = google_translate(merged)
+            if translated == merged:
+                new_blocks.append(block)
+                continue
+            
             escaped = safe_escape(translated)
-            print(f"  doc:  {text[:60]}...")
-            print(f"  →    {translated[:60]}...")
-            return f'/// {escaped}'
+            print(f"  block: {merged[:60]}...")
+            print(f"  →      {translated[:60]}...")
+            # 替换第一行
+            new_lines = []
+            first = True
+            for l in lines:
+                if l.strip().startswith('///'):
+                    if first:
+                        new_lines.append(f'/// {escaped}')
+                        first = False
+                    else:
+                        new_lines.append('')  # 移除多余行
+                else:
+                    new_lines.append(l)
+            # 过滤空行
+            new_block = '\n'.join(l for l in new_lines if l or l == '')
+            new_block = re.sub(r'\n{3,}', '\n\n', new_block)  # 去多余空行
+            new_blocks.append(new_block)
         
-        content = re.sub(r'/// (.+)', repl_doc, content)
+        content = '\n'.join(new_blocks)
         
         # ── 3. fn description() { "..." } → AI 翻译 ──
         def repl_fn_desc(m):
