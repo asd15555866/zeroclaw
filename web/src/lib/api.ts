@@ -983,8 +983,7 @@ export function fetchConfigSchema(): Promise<JsonSchema> {
   if (!configSchemaCache) {
     configSchemaCache = apiFetch<JsonSchema>("/api/config", {
       method: "OPTIONS",
-    }).then((schema) => translateConfigSchema(schema))
-      .catch(() => undefined);
+    }).then((schema) => translateConfigSchema(schema)).catch(() => undefined);
   }
   return configSchemaCache;
 }
@@ -1458,6 +1457,7 @@ export interface SectionsResponse {
 
 export function getSections(): Promise<SectionsResponse> {
   return apiFetch<SectionsResponse>("/api/config/sections").then((data) => ({
+    ...data,
     sections: translateSections(data.sections),
   }));
 }
@@ -1854,8 +1854,8 @@ export function getTools(agent?: string): Promise<ToolSpec[]> {
   return apiFetch<ToolSpec[] | { tools: ToolSpec[] }>(`/api/tools${qs}`).then(
     (data) => {
       const result = unwrapField(data, "tools");
-      const array = Array.isArray(result) ? result : [];
-      return translateToolSpecs(array);
+      const tools = Array.isArray(result) ? result : [];
+      return translateToolSpecs(tools);
     },
   );
 }
