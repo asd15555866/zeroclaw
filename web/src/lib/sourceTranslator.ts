@@ -1,25 +1,23 @@
 /**
- * sourceTranslator.ts — Web 端源码文本翻译层
+ * sourceTranslator.ts — 运行时翻译层（方案 B：稳定 key 匹配 + 模式替换）
  *
- * 不修改 Rust 源码，在 API 响应到达 React 组件之前，
- * 将 Rust 硬编码的英文文本（工具描述、配置字段标签、section 标题）
- * 替换为中文显示。
- *
+ * 不修改 Rust 源码，在 API 响应到达 React 组件之前翻译英文文本。
  * 注入点：api.ts 中的 getTools() / fetchConfigSchema() / getSections()
  *
- * 注意：工具名仅翻译通用描述性名称（读文件/写文件等），
- *       技术术语/品牌名（shell、MCP、Jira、GitHub 等）保留英文。
+ * 核心设计：
+ *   - Section → 按稳定的 section.key（如 "agents"）匹配，不受 label 文本变化影响
+ *   - 配置描述 → 按常见短语做子串替换（desc.replace(/API key/g, 'API 密钥')）
+ *   - 工具描述 → 按工具名匹配（工具名稳定）
  */
 
 import type { ToolSpec } from '../types/api';
 
-// ---------------------------------------------------------------------------
-// 1. 工具名翻译映射表
-//    只翻译通用描述性工具名，保留技术术语（shell/MCP/ACP）和品牌名
-// ---------------------------------------------------------------------------
+// ============================================================================
+// 1. 工具名翻译（按工具名 key — 稳定）
+//    只翻译通用描述性工具名；技术术语/品牌名保留英文
+// ============================================================================
 
 const toolNameMap: Record<string, string> = {
-  // ── 文件操作 ──
   'file_read': '读文件',
   'file_write': '写文件',
   'file_edit': '编辑文件',
@@ -28,47 +26,39 @@ const toolNameMap: Record<string, string> = {
   'file_download': '下载文件',
   'glob_search': '全局搜索',
   'content_search': '内容搜索',
-  // ── 网络/Web ──
   'web_fetch': '网页抓取',
   'web_search_tool': '网页搜索',
   'text_browser': '文本浏览器',
   'screenshot': '截图',
   'http_request': 'HTTP 请求',
-  // ── 记忆 ──
   'memory_store': '存储记忆',
   'memory_recall': '召回记忆',
   'memory_forget': '遗忘记忆',
   'memory_export': '导出记忆',
   'memory_purge': '清理记忆',
-  // ── 定时任务 ──
   'cron_add': '添加定时任务',
   'cron_list': '列出定时任务',
   'cron_remove': '删除定时任务',
   'cron_update': '更新定时任务',
   'cron_run': '运行定时任务',
   'cron_runs': '定时任务历史',
-  // ── SOP 工作流 ──
   'sop_execute': '执行 SOP',
   'sop_list': '列出 SOP',
   'sop_status': 'SOP 状态',
   'sop_advance': '推进 SOP',
   'sop_approve': '审批 SOP',
   'sop_workshop': 'SOP 编辑器',
-  // ── 会话/对话 ──
   'sessions_list': '会话列表',
   'ask_user': '询问用户',
   'poll': '创建投票',
   'escalate_to_human': '转人工',
   'send_via': '发送方式',
   'reaction': '表情反应',
-  // ── 智能体/委托 ──
   'noop': '委派子智能体',
   'llm_task': 'LLM 任务',
   'model_routing_config': '模型路由配置',
-  // ── 浏览器 ──
   'browser_open': '打开浏览器',
   'browser_delegate': '浏览器代理',
-  // ── 工具/技能 ──
   'skills_list': '技能列表',
   'read_skill': '读技能',
   'tool_search': '搜索工具',
@@ -77,45 +67,31 @@ const toolNameMap: Record<string, string> = {
   'schedule': '计划任务',
   'counting': '计数器',
   'fake': '测试工具',
-  // ── 硬件 ──
   'hardware_board_info': '板卡信息',
   'hardware_memory_map': '内存映射',
   'hardware_memory_read': '内存读取',
-  // ── 图片/媒体 ──
   'image_gen': '图片生成',
   'image_info': '图片信息',
-  // ── 数据/知识 ──
   'knowledge': '知识库',
   'data_management': '数据管理',
   'backup': '备份',
   'canvas': '画布',
-  // ── 安全 ──
   'security_ops': '安全运维',
   'vi_verify': 'VI 验证',
-  // ── 邮件 ──
   'email_read': '读邮件',
   'email_search': '搜邮件',
-  // ── 项目管理 ──
   'project_intel': '项目情报',
   'report_template': '报告模板',
-  // ── 运维 ──
   'cloud_ops': '云端运维',
   'cloud_patterns': '云端模式',
   'proxy_config': '代理配置',
   'weather': '天气',
   'git_operations': 'Git 操作',
-
-  // ── 以下保留英文：品牌名/技术术语 ──
-  // shell, mcp_prompts, mcp_resources, jira, notion, github, 
-  // claude_code, claude_code_runner, gemini_cli, codex_cli, opencode_cli,
-  // composio, google_workspace, git_forge, linkedin, pushover,
-  // discord_search 保留 Discord 品牌名
 };
 
-// ---------------------------------------------------------------------------
-// 2. 工具描述翻译映射表（84 条，完整覆盖）
-//    key = 工具名（fn name() 返回值），value = 中文描述
-// ---------------------------------------------------------------------------
+// ============================================================================
+// 2. 工具描述翻译（按工具名 key — 稳定）
+// ============================================================================
 
 const toolDescriptionMap: Record<string, string> = {
   ask_user: '向用户提问并等待回复。将问题发送到消息通道并阻塞，直到用户回复或超时。可提供选项以获得结构化回复。',
@@ -204,21 +180,70 @@ const toolDescriptionMap: Record<string, string> = {
   vi_verify: '验证可验证意图凭证链。支持两种操作：\'verify_binding\' 检查凭证层之间的 sd_hash 绑定；\'evaluate_constraints\' 根据履行数据验证约束。',
 };
 
-// ---------------------------------------------------------------------------
-// 3. 配置字段 description 翻译映射表
-// ---------------------------------------------------------------------------
+// ============================================================================
+// 3. Section 翻译 — 按稳定 key 匹配，而非全文 label/help 精确匹配
+//    key 来源于 Rust 源码 sections! 宏定义，版本间不变
+// ============================================================================
 
-const configDescriptionMap: Record<string, string> = {
-  // 示例条目 — 扩展时按同样格式添加
-  'Secret API token for this model_provider. Grab it from the model_provider\'s dashboard (OpenAI platform, Anthropic console, OpenRouter keys page, etc.). Stored via the OS keyring when possible; never commit it to config.toml directly.':
-    '此 model_provider 的密钥 API 令牌。从 model_provider 的控制面板获取（OpenAI 平台、Anthropic 控制台、OpenRouter 密钥页面等）。尽可能通过 OS 密钥环存储；切勿直接提交到 config.toml。',
-  // 添加更多配置字段翻译...
+/**
+ * Section key → 中文 label 映射
+ * key 来自 Rust `sections.rs` 中的 sections! 宏，label 从 humanize_section_key() 生成
+ */
+const sectionKeyToLabel: Record<string, string> = {
+  'providers.models': '模型提供商',
+  'model_routes': '模型路由',
+  'embedding_routes': '嵌入路由',
+  'risk_profiles': '风险配置',
+  'runtime_profiles': '运行配置',
+  'storage': '存储',
+  'memory': '记忆',
+  'skills': '技能',
+  'skill_bundles': '技能集',
+  'mcp': 'MCP',
+  'mcp.servers': 'MCP 服务器',
+  'mcp_bundles': 'MCP 集',
+  'knowledge_bundles': '知识集',
+  'providers.tts': 'TTS 提供商',
+  'providers.transcription': '转录提供商',
+  'channels': '通道',
+  'hardware': '硬件',
+  'agents': '智能体',
+  'peer_groups': '对等组',
+  'cron': '定时任务',
+  'tunnel': '隧道',
+  'onboard_state': '引导状态',
 };
 
-// ---------------------------------------------------------------------------
-// 4. Section label/help 翻译映射表
-// ---------------------------------------------------------------------------
+/**
+ * Section key → 中文 help 映射
+ * help 来自 Rust sections! 宏中的 help 字段，版本间不变
+ */
+const sectionKeyToHelp: Record<string, string> = {
+  'providers.models': '选择一个模型提供商进行配置（Anthropic、OpenAI、OpenRouter、Ollama、自定义 OpenAI 兼容网关等）。支持每个提供商多个别名 — 例如 anthropic.production 和 anthropic.dev 可以共存。',
+  'model_routes': '命名模型路由提示（如 reasoning、fast、code）。每个路由将提示映射到特定的提供商 + 模型组合。使用 `hint:<name>` 作为模型参数来通过路由调度。',
+  'embedding_routes': '命名嵌入路由提示（如 semantic、archive、faq）。每个路由将提示映射到支持嵌入的提供商 + 模型组合。使用 `hint:<name>` 作为 embedding_model 参数。',
+  'risk_profiles': '命名的风险配置文件，绑定允许列表、拒绝列表和审批阈值。智能体通过 `agents.<alias>.risk_profile` 引用其中之一。',
+  'runtime_profiles': '命名运行时调优配置文件（令牌限制、重试策略、超时）。智能体通过 `agents.<alias>.runtime_profile` 引用其中之一。',
+  'storage': 'SQLite 是单节点安装的安全默认选择（基于文件、零配置、无需额外服务）。Postgres 用于共享或多实例部署，Qdrant 用于向量搜索，Markdown 或 Lucid 用于可读文件。每种后端支持多个别名实例；智能体通过 `memory.storage_ref` 引用它们。',
+  'memory': '持久化记忆后端。SQLite 是默认选择；选择 `none` 可完全禁用长期回忆。',
+  'skills': '技能工具设置 — 技能 markdown 文件在磁盘上的存放位置（默认为数据目录），以及技能加载器如何处理社区仓库。在下方「技能集」中添加技能集合。',
+  'skill_bundles': '命名的技能文件集合。智能体引用某个技能集来在启动时加载一组能力。',
+  'mcp': '模型上下文协议设置。切换 `enabled` 并选择延迟或立即加载。各个 MCP 服务器位于 `mcp.servers[]` 下。',
+  'mcp.servers': '各个模型上下文协议服务器。每个条目绑定一个传输方式（stdio、http、sse）、访问命令或 URL、可选的标头，以及 `tool_timeout_secs` 上限（≤ 600）。每个服务器的 `name` 是其可寻址的 key — 通过段落页面重命名，而不是直接编辑字段。将服务器分组到下方的 `mcp_bundles` 中。',
+  'mcp_bundles': '命名的 MCP 服务器集合，授予在 `mcp_bundles` 中列出该集合的智能体。默认安全：智能体只获得其集合授予的服务器；没有集合则没有 MCP 服务器。',
+  'knowledge_bundles': '命名的知识源集合（RAG 索引、文档文件夹）。智能体引用一个集合以在推理时显示相关片段。',
+  'providers.tts': '文字转语音提供商（OpenAI、ElevenLabs、Google、Edge、Piper）。为每种语音/语言配置一个；智能体按别名引用它们。',
+  'providers.transcription': '语音转文字提供商（OpenAI Whisper、Groq、Deepgram、AssemblyAI、Google、本地 Whisper）。为每个流水线配置一个；智能体按别名引用它们。',
+  'channels': '选择 ZeroClaw 应在哪些聊天平台上监听。全局通道设置位于 `[channels]`；每个配置的平台仍拥有自己的别名。',
+  'hardware': '可选：硬件外设（Arduino、STM32、GPIO 等）。如果不需要可以跳过。',
+  'agents': '智能体将模型提供商、配置文件、集合和通道绑定为一个可调度单元。为每个角色添加一个；跨通道复用同一别名以共享状态。',
+  'peer_groups': '命名的对等组，绑定一个通道、成员智能体和外部对等节点。相互加入：仅当两个智能体同时出现在同一组的 `agents` 列表中时，它们才成为对等节点。',
+  'cron': '定时任务。每个 cron 条目将时间表达式绑定到提示、通道和目标。',
+  'tunnel': '可选：通过 Cloudflare 或 ngrok 将网关暴露到公共互联网。选择 `none` 保持仅限 localhost。',
+  'onboard_state': '引导流程生命周期状态。引导流程成功运行后，`quickstart_completed` 翻转为 true；为 false 时，Web 网关和 TUI 在启动时自动启动引导流程。`completed_sections` 是保留的每段落账本，用于向后兼容旧数据。',
+};
 
+/** 分组名翻译（来自 Rust SectionGroup 枚举的 label） */
 const groupMap: Record<string, string> = {
   'Foundation': '基础',
   'Agent': '智能体',
@@ -231,24 +256,128 @@ const groupMap: Record<string, string> = {
   'Other': '其他',
 };
 
-const sectionLabelMap: Record<string, string> = {
-  // 示例 — 根据 /api/config/sections 返回的实际 label 填充
-  // 'Channels': '通道',
-  // 'Model Providers': '模型提供商',
-  // 'Agents': '智能体',
-};
+// ============================================================================
+// 4. 配置描述翻译 — 子串替换模式（不依赖全文精确匹配）
+//    即使 Rust 更新了描述中的某些单词，大部分短语仍能匹配
+// ============================================================================
 
-const sectionHelpMap: Record<string, string> = {
-  // 示例 — 根据 /api/config/sections 返回的实际 help 填充
-};
+/**
+ * 常见英文短语 → 中文替换规则
+ * 按正则顺序执行，v 替换已翻译好的字符串
+ */
+/**
+ * 常见英文短语 → 中文替换模式
+ * 单名词必须用词边界 \b 避免误匹配（如 agent 匹配 agent_alias）
+ * 双词或多词短语用词边界包裹更安全
+ * 顺序重要：先匹配长短语，再匹配短短语
+ */
+const descriptionPatterns: Array<[RegExp, string]> = [
+  // ── 长短语（优先匹配，避免被短规则截断）──
+  [/\bSecret API token(s)?\b/gi, '密钥 API 令牌'],
+  [/\bmodel[-_ ]?provider\b/gi, '模型提供商'],
+  [/\bAPI (?:secret|key|token|credential)\b/gi, 'API 密钥'],
+  [/\btext[- ]to[- ]speech\b/gi, '文字转语音'],
+  [/\bspeech[- ]to[- ]text\b/gi, '语音转文字'],
+  [/\ballow[- ]?list\b/gi, '允许列表'],
+  [/\bdeny[- ]?list\b/gi, '拒绝列表'],
+  [/\bfall?back\b/gi, '回退'],
+  [/\bend[- ]?point\b/gi, '端点'],
+  [/webhook/gi, 'Webhook'], // 专有名词，不需要词边界
+  [/\bacp[- ]bridge\b/gi, 'ACP 桥接'],
+  [/\bRaspberry Pi\b/gi, '树莓派'],
+  // ── 双词短语 ──
+  [/\brisk profiles?\b/gi, '风险配置'],
+  [/\bruntime profiles?\b/gi, '运行配置'],
+  [/\bembedding routes?\b/gi, '嵌入路由'],
+  [/\bpeer groups?\b/gi, '对等组'],
+  [/\bmodel routes?\b/gi, '模型路由'],
+  [/\bknowledge bundles?\b/gi, '知识集'],
+  [/\bskill bundles?\b/gi, '技能集'],
+  [/\bmcp servers?\b/gi, 'MCP 服务器'],
+  [/\bmcp bundles?\b/gi, 'MCP 集'],
+  [/\bTTS providers?\b/gi, 'TTS 提供商'],
+  [/\btranscription providers?\b/gi, '转录提供商'],
+  [/\boperating system\b/gi, '操作系统'],
+  [/\bfile system\b/gi, '文件系统'],
+  // ── 单名词（带 \b 词边界）──
+  [/\bagents?\b/gi, '智能体'],
+  [/\bchannels?\b/gi, '通道'],
+  [/\bsandbox/gi, '沙箱'],
+  [/\bworkspace/gi, '工作区'],
+  [/\bgateway/gi, '网关'],
+  [/\bdaemon/gi, '守护进程'],
+  [/\bprovider/gi, '提供商'],
+  [/\bendpoint/gi, '端点'],
+  [/\bhost\b/gi, '主机'],         // \bhost\b 避免匹配 hostname
+  [/\bport\b/gi, '端口'],         // \bport\b 避免匹配 portable/report
+  [/\btimeout/gi, '超时'],
+  [/\bheader/gi, '标头'],
+  [/\bpayload/gi, '载荷'],
+  [/\brouting\b/gi, '路由'],
+  [/\bembedding/gi, '嵌入'],
+  [/\btranscription/gi, '转录'],
+  [/\bcallback/gi, '回调'],
+  [/\baudit/gi, '审计'],
+  [/\btrac(?:e|ing)/gi, '跟踪'],
+  [/\bmetric/gi, '指标'],
+  [/\bobservability/gi, '可观测性'],
+  [/\bperipheral/gi, '外设'],
+  [/\bdelegat(?:e|ion)/gi, '委托'],
+  [/\bpeer/gi, '对等'],
+  [/\bprofile/gi, '配置文件'],
+  [/\bworkflow/gi, '工作流'],
+  [/\bpipeline/gi, '流水线'],
+  [/\bplugin/gi, '插件'],
+  [/\bdashboard/gi, '面板'],
+  [/\bsidebar/gi, '侧边栏'],
+  [/\bbrowser/gi, '浏览器'],
+  [/\bdatabase/gi, '数据库'],
+  [/\bscheduler?\b/gi, '调度器'],
+  [/\bcron\b/gi, '定时任务'],
+  [/\bparse/gi, '解析'],
+  [/\bserver\b/gi, '服务器'],
+  [/\bclient\b/gi, '客户端'],
+  [/\bpersonality\b/gi, '人格'],
+  [/\bschema\b/gi, 'Schema'],
+  // ── 硬件术语 ──
+  [/\bGPIO\b/gi, 'GPIO'],
+  [/\bI2C\b/gi, 'I2C'],
+  [/\bSPI\b/gi, 'SPI'],
+  [/\bUSB\b/gi, 'USB'],
+  // ── 不翻译：品牌名/技术术语（Arduino, STM32, ESP32, SQLite, Postgres, Node.js, curl, grep 等）──
+];
 
-// ---------------------------------------------------------------------------
-// 翻译函数
-// ---------------------------------------------------------------------------
+/**
+ * 对一段英文描述文本执行短语模式替换
+ * 先用精确匹配查表，未命中则用正则子串替换
+ */
+function translateDescriptionText(text: string): string {
+  if (!text || typeof text !== 'string') return text;
+
+  // 第一步：完整精确匹配（用于无法被模式覆盖的特定长描述）
+  const exactMap: Record<string, string> = {
+    'Secret API token for this model_provider. Grab it from the model_provider\'s dashboard (OpenAI platform, Anthropic console, OpenRouter keys page, etc.). Stored via the OS keyring when possible; never commit it to config.toml directly.':
+      '此模型提供商的密钥 API 令牌。从模型提供商的控制面板获取（OpenAI 平台、Anthropic 控制台、OpenRouter 密钥页面等）。尽可能通过系统密钥环存储；切勿直接提交到 config.toml。',
+  };
+  if (exactMap[text]) return exactMap[text];
+
+  // 第二步：正则短语替换
+  let result = text;
+  for (const [pattern, replacement] of descriptionPatterns) {
+    if (pattern.test(result)) {
+      result = result.replace(pattern, replacement);
+    }
+  }
+
+  return result;
+}
+
+// ============================================================================
+// 导出函数
+// ============================================================================
 
 /**
  * 翻译单个工具规格 — 替换 name 和 description 为中文
- * shell、MCP、ACP 等技术术语/品牌名保留英文
  */
 export function translateToolSpec<T extends ToolSpec>(tool: T): T {
   const zhName = toolNameMap[tool.name];
@@ -260,16 +389,14 @@ export function translateToolSpec<T extends ToolSpec>(tool: T): T {
   return result;
 }
 
-/**
- * 批量翻译工具列表
- */
+/** 批量翻译工具列表 */
 export function translateToolSpecs<T extends ToolSpec>(tools: T[]): T[] {
   return tools.map(translateToolSpec);
 }
 
 /**
  * 递归翻译 JSON Schema 中的所有 description 字段
- * 遍历 properties / items / additionalProperties / definitions / $defs
+ * 同时应用精确匹配 + 模式替换
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function translateConfigSchema(schema: any): any {
@@ -279,10 +406,9 @@ export function translateConfigSchema(schema: any): any {
     ? schema.map(translateConfigSchema)
     : { ...schema };
 
-  // 翻译当前层级的 description
+  // 翻译当前层级的 description（精确 + 模式）
   if (typeof result.description === 'string') {
-    const zh = configDescriptionMap[result.description];
-    if (zh) result.description = zh;
+    result.description = translateDescriptionText(result.description);
   }
 
   // 递归 properties
@@ -293,17 +419,17 @@ export function translateConfigSchema(schema: any): any {
     }
   }
 
-  // 递归 items（数组类型）
+  // 递归 items
   if (result.items) {
     result.items = translateConfigSchema(schema.items);
   }
 
-  // 递归 additionalProperties（map 类型）
+  // 递归 additionalProperties
   if (result.additionalProperties && typeof result.additionalProperties === 'object') {
     result.additionalProperties = translateConfigSchema(schema.additionalProperties);
   }
 
-  // 递归 definitions / $defs（引用定义）
+  // 递归 definitions / $defs
   for (const defKey of ['definitions', '$defs']) {
     if (result[defKey] && typeof result[defKey] === 'object') {
       result[defKey] = {};
@@ -324,32 +450,44 @@ export function translateConfigSchema(schema: any): any {
 }
 
 /**
- * 翻译 section 列表 — 替换 label、help 和 group
+ * 翻译 section 列表 — 按稳定 key 匹配 label / help / group
+ * 需要 SectionInfo 类型包含 key 字段
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function translateSections<T extends { label?: string; help?: string; group?: string }>(sections: T[]): T[] {
+export function translateSections<T extends { label?: string; help?: string; group?: string; key?: string }>(sections: T[]): T[] {
   return sections.map((s) => {
     const result = { ...s } as any;
-    if (s.label && sectionLabelMap[s.label]) {
-      result.label = sectionLabelMap[s.label];
+    const key = (s as any).key;
+
+    if (key && typeof key === 'string') {
+      // 按稳定 key 翻译 label
+      const zhLabel = sectionKeyToLabel[key];
+      if (zhLabel) result.label = zhLabel;
+
+      // 按稳定 key 翻译 help
+      const zhHelp = sectionKeyToHelp[key];
+      if (zhHelp) result.help = zhHelp;
+
+      // group 仍然按文本匹配（group 名称来自 Rust 枚举，也是稳定的）
     }
-    if (s.help && sectionHelpMap[s.help]) {
-      result.help = sectionHelpMap[s.help];
-    }
+
     if (s.group) {
       result.group = groupMap[s.group] || s.group;
     }
+
     return result;
   });
 }
 
 /**
  * 通用文本翻译 — 用于零散的硬编码英文文本
- * 如果映射表中没有匹配项，返回原文（降级处理）
  */
 export function translateText(en: string): string {
-  return configDescriptionMap[en]
-    || sectionLabelMap[en]
-    || sectionHelpMap[en]
-    || en;
+  if (!en) return en;
+  // 先用精确匹配
+  for (const map of [sectionKeyToLabel, sectionKeyToHelp]) {
+    if (map[en]) return map[en];
+  }
+  // 再用模式替换
+  return translateDescriptionText(en);
 }
