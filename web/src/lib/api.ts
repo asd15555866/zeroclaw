@@ -17,6 +17,7 @@ import type {
 import type { components } from "./api-generated";
 import { clearToken, getToken, setToken } from "./auth";
 import { apiOrigin, basePath } from "./basePath";
+import { translateToolSpecs, translateConfigSchema, translateSections } from "./sourceTranslator";
 
 // ---------------------------------------------------------------------------
 // Base fetch wrapper
@@ -982,7 +983,8 @@ export function fetchConfigSchema(): Promise<JsonSchema> {
   if (!configSchemaCache) {
     configSchemaCache = apiFetch<JsonSchema>("/api/config", {
       method: "OPTIONS",
-    }).catch(() => undefined);
+    }).then((schema) => translateConfigSchema(schema))
+      .catch(() => undefined);
   }
   return configSchemaCache;
 }
@@ -1455,7 +1457,9 @@ export interface SectionsResponse {
 }
 
 export function getSections(): Promise<SectionsResponse> {
-  return apiFetch<SectionsResponse>("/api/config/sections");
+  return apiFetch<SectionsResponse>("/api/config/sections").then((data) => ({
+    sections: translateSections(data.sections),
+  }));
 }
 
 export interface SectionStatusResponse {
@@ -1850,7 +1854,8 @@ export function getTools(agent?: string): Promise<ToolSpec[]> {
   return apiFetch<ToolSpec[] | { tools: ToolSpec[] }>(`/api/tools${qs}`).then(
     (data) => {
       const result = unwrapField(data, "tools");
-      return Array.isArray(result) ? result : [];
+      const array = Array.isArray(result) ? result : [];
+      return translateToolSpecs(array);
     },
   );
 }
