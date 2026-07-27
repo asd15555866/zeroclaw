@@ -1,3 +1,8 @@
 node_modules/
 dist/*
 !dist/.gitkeep
+
+# Rust-generated API stubs (local IDE only)
+src/lib/api-generated.ts
+src/lib/api-descriptions.ts
+src/lib/api-enums.ts
