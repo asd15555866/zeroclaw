@@ -7,14 +7,113 @@
  *
  * 注入点：api.ts 中的 getTools() / fetchConfigSchema() / getSections()
  *
- * 注意：工具名（name）保留英文，因为它是 LLM function-calling 的标识符。
- *       只翻译 description（描述文本）。
+ * 注意：工具名仅翻译通用描述性名称（读文件/写文件等），
+ *       技术术语/品牌名（shell、MCP、Jira、GitHub 等）保留英文。
  */
 
 import type { ToolSpec } from '../types/api';
 
 // ---------------------------------------------------------------------------
-// 1. 工具描述翻译映射表（84 条，完整覆盖）
+// 1. 工具名翻译映射表
+//    只翻译通用描述性工具名，保留技术术语（shell/MCP/ACP）和品牌名
+// ---------------------------------------------------------------------------
+
+const toolNameMap: Record<string, string> = {
+  // ── 文件操作 ──
+  'file_read': '读文件',
+  'file_write': '写文件',
+  'file_edit': '编辑文件',
+  'file_upload': '上传文件',
+  'file_upload_bundle': '文件上传集',
+  'file_download': '下载文件',
+  'glob_search': '全局搜索',
+  'content_search': '内容搜索',
+  // ── 网络/Web ──
+  'web_fetch': '网页抓取',
+  'web_search_tool': '网页搜索',
+  'text_browser': '文本浏览器',
+  'screenshot': '截图',
+  'http_request': 'HTTP 请求',
+  // ── 记忆 ──
+  'memory_store': '存储记忆',
+  'memory_recall': '召回记忆',
+  'memory_forget': '遗忘记忆',
+  'memory_export': '导出记忆',
+  'memory_purge': '清理记忆',
+  // ── 定时任务 ──
+  'cron_add': '添加定时任务',
+  'cron_list': '列出定时任务',
+  'cron_remove': '删除定时任务',
+  'cron_update': '更新定时任务',
+  'cron_run': '运行定时任务',
+  'cron_runs': '定时任务历史',
+  // ── SOP 工作流 ──
+  'sop_execute': '执行 SOP',
+  'sop_list': '列出 SOP',
+  'sop_status': 'SOP 状态',
+  'sop_advance': '推进 SOP',
+  'sop_approve': '审批 SOP',
+  'sop_workshop': 'SOP 编辑器',
+  // ── 会话/对话 ──
+  'sessions_list': '会话列表',
+  'ask_user': '询问用户',
+  'poll': '创建投票',
+  'escalate_to_human': '转人工',
+  'send_via': '发送方式',
+  'reaction': '表情反应',
+  // ── 智能体/委托 ──
+  'noop': '委派子智能体',
+  'llm_task': 'LLM 任务',
+  'model_routing_config': '模型路由配置',
+  // ── 浏览器 ──
+  'browser_open': '打开浏览器',
+  'browser_delegate': '浏览器代理',
+  // ── 工具/技能 ──
+  'skills_list': '技能列表',
+  'read_skill': '读技能',
+  'tool_search': '搜索工具',
+  'TodoWrite': '写待办',
+  'calculator': '计算器',
+  'schedule': '计划任务',
+  'counting': '计数器',
+  'fake': '测试工具',
+  // ── 硬件 ──
+  'hardware_board_info': '板卡信息',
+  'hardware_memory_map': '内存映射',
+  'hardware_memory_read': '内存读取',
+  // ── 图片/媒体 ──
+  'image_gen': '图片生成',
+  'image_info': '图片信息',
+  // ── 数据/知识 ──
+  'knowledge': '知识库',
+  'data_management': '数据管理',
+  'backup': '备份',
+  'canvas': '画布',
+  // ── 安全 ──
+  'security_ops': '安全运维',
+  'vi_verify': 'VI 验证',
+  // ── 邮件 ──
+  'email_read': '读邮件',
+  'email_search': '搜邮件',
+  // ── 项目管理 ──
+  'project_intel': '项目情报',
+  'report_template': '报告模板',
+  // ── 运维 ──
+  'cloud_ops': '云端运维',
+  'cloud_patterns': '云端模式',
+  'proxy_config': '代理配置',
+  'weather': '天气',
+  'git_operations': 'Git 操作',
+
+  // ── 以下保留英文：品牌名/技术术语 ──
+  // shell, mcp_prompts, mcp_resources, jira, notion, github, 
+  // claude_code, claude_code_runner, gemini_cli, codex_cli, opencode_cli,
+  // composio, google_workspace, git_forge, linkedin, pushover,
+  // discord_search 保留 Discord 品牌名
+};
+
+// ---------------------------------------------------------------------------
+// 2. 工具描述翻译映射表（84 条，完整覆盖）
 //    key = 工具名（fn name() 返回值），value = 中文描述
 // ---------------------------------------------------------------------------
 
@@ -106,10 +205,7 @@ const toolDescriptionMap: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// 2. 配置字段 description 翻译映射表
-//    key = 英文原文（Rust /// doc comment），value = 中文翻译
-//    注意：配置字段数量庞大（300-500+），此处提供框架和示例。
-//    完整映射可通过脚本从 schema.rs 的 /// 注释批量提取后翻译填充。
+// 3. 配置字段 description 翻译映射表
 // ---------------------------------------------------------------------------
 
 const configDescriptionMap: Record<string, string> = {
@@ -120,8 +216,7 @@ const configDescriptionMap: Record<string, string> = {
 };
 
 // ---------------------------------------------------------------------------
-// 3. Section label/help 翻译映射表
-//    key = 英文原文，value = 中文翻译
+// 4. Section label/help 翻译映射表
 // ---------------------------------------------------------------------------
 
 const groupMap: Record<string, string> = {
@@ -152,11 +247,17 @@ const sectionHelpMap: Record<string, string> = {
 // ---------------------------------------------------------------------------
 
 /**
- * 翻译单个工具规格 — 替换 description 为中文（name 保留英文）
+ * 翻译单个工具规格 — 替换 name 和 description 为中文
+ * shell、MCP、ACP 等技术术语/品牌名保留英文
  */
 export function translateToolSpec<T extends ToolSpec>(tool: T): T {
-  const zh = toolDescriptionMap[tool.name];
-  return zh ? { ...tool, description: zh } : tool;
+  const zhName = toolNameMap[tool.name];
+  const zhDesc = toolDescriptionMap[tool.name];
+  if (!zhName && !zhDesc) return tool;
+  const result = { ...tool };
+  if (zhName) result.name = zhName;
+  if (zhDesc) result.description = zhDesc;
+  return result;
 }
 
 /**
@@ -237,7 +338,6 @@ export function translateSections<T extends { label?: string; help?: string; gro
     }
     if (s.group) {
       result.group = groupMap[s.group] || s.group;
-    }
     }
     return result;
   });
