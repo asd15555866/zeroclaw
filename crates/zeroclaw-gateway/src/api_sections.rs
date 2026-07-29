@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use zeroclaw_config::api_error::{ConfigApiCode, ConfigApiError};
+use zeroclaw_config::field_visibility;
 use zeroclaw_runtime::rpc::types::{
     CatalogModelProvider, CatalogModelsResult, CatalogResponse, ConfigSectionEntry,
     ConfigSectionsResult, ConfigStatusResult, PickerItem, PickerResponse, SelectItemResponse,
@@ -270,6 +271,22 @@ pub async fn handle_sections(State(state): State<AppState>, headers: HeaderMap) 
         .iter()
         .filter_map(|f| f.name.split('.').next().map(str::to_string))
         .collect();
+
+    // Hide section roots whose fields are all excluded by compile-time
+    // feature gates. The same logic that filters individual fields is reused
+    // so the sidebar and the field list stay in sync.
+    //
+    // A root R is removed if any exclude E matches it as:
+    //   - exact match (R == E), or
+    //   - table-prefix marker (E = "foo.", R = "foo"), or
+    //   - nested table-prefix marker (E = "foo.bar.", R = "foo.bar")
+    let excluded = field_visibility::excluded_paths(&cfg, "");
+    roots.retain(|root| {
+        !excluded.iter().any(|e| {
+            root == e
+                || (e.ends_with('.') && root.as_str() == &e[..e.len() - 1])
+        })
+    });
 
     // System / housekeeping fields the user never edits via the dashboard.
     for hidden in HIDDEN_TOP_LEVEL {
