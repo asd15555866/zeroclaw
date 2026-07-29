@@ -40,7 +40,7 @@ jobs:
         run: |
           cross build --profile dist \
             --target aarch64-unknown-linux-musl \
-            --features "agent-runtime,gateway,acp-bridge,observability-prometheus,schema-export,embedded-web,sandbox-landlock,browser-native,channel-acp-server,channel-webhook,channel-email,channel-telegram,channel-filesystem,channel-mqtt,channel-wechat"
+            --features "agent-runtime,gateway,observability-prometheus,schema-export,embedded-web,sandbox-landlock,browser-native,channel-webhook,channel-email,channel-telegram,channel-filesystem,channel-mqtt,channel-wechat"
 
       - name: Package
         run: |

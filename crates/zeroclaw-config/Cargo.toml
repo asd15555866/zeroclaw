@@ -55,3 +55,63 @@ default = ["schema-export", "clap"]
 schema-export = ["dep:schemars"]
 clap = ["dep:clap"]
 memory-postgres = ["dep:postgres"]
+
+# ------------------------------------------------------------------
+# Feature-awareness flags for config visibility filtering.
+# These pull zero dependencies — they only gate cfg!(feature = "...")
+# checks in field_visibility so the web dashboard hides config sections
+# for subsystems that weren't compiled into the binary.
+#
+# Naming convention: _cfg-<root-feature-name> so they don't collide
+# with the dep:postgres style features above.
+# ------------------------------------------------------------------
+_cfg-gateway = []
+_cfg-hardware = []
+_cfg-peripheral-rpi = []
+_cfg-probe = []
+_cfg-sandbox-landlock = []
+_cfg-sandbox-bubblewrap = []
+_cfg-browser-native = []
+_cfg-plugins-wasm = []
+_cfg-webauthn = []
+_cfg-acp-bridge = []
+_cfg-observability-prometheus = []
+_cfg-observability-otel = []
+
+# Per-channel config visibility (each matches a root channel-* feature)
+_cfg-channel-acp-server = []
+_cfg-channel-amqp = []
+_cfg-channel-bluesky = []
+_cfg-channel-clawdtalk = []
+_cfg-channel-dingtalk = []
+_cfg-channel-discord = []
+_cfg-channel-email = []
+_cfg-channel-filesystem = []
+_cfg-channel-git = []
+_cfg-channel-imessage = []
+_cfg-channel-irc = []
+_cfg-channel-lark = []
+_cfg-channel-line = []
+_cfg-channel-linq = []
+_cfg-channel-mattermost = []
+_cfg-channel-matrix = []
+_cfg-channel-mochat = []
+_cfg-channel-mqtt = []
+_cfg-channel-nextcloud = []
+_cfg-channel-nostr = []
+_cfg-channel-notion = []
+_cfg-channel-qq = []
+_cfg-channel-reddit = []
+_cfg-channel-signal = []
+_cfg-channel-slack = []
+_cfg-channel-telegram = []
+_cfg-channel-twitch = []
+_cfg-channel-twitter = []
+_cfg-channel-voice-call = []
+_cfg-channel-wati = []
+_cfg-channel-wechat = []
+_cfg-channel-wecom = []
+_cfg-channel-wecom-ws = []
+_cfg-channel-webhook = []
+_cfg-channel-whatsapp-cloud = []
+_cfg-whatsapp-web = []
