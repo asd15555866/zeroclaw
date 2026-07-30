@@ -320,7 +320,7 @@ pub async fn handle_sections(State(state): State<AppState>, headers: HeaderMap) 
         .filter(|prefix| {
             !excluded.iter().any(|e| {
                 *prefix == e.as_str()
-                    || (e.ends_with('.') && prefix.starts_with(e.as_str()))
+                    || (e.ends_with('.') && &e[..e.len() - 1] == *prefix)
             })
         })
         .collect();
