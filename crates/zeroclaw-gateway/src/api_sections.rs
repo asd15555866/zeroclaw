@@ -310,9 +310,19 @@ pub async fn handle_sections(State(state): State<AppState>, headers: HeaderMap) 
     // HashMap is empty (prop_fields() only yields paths for populated
     // entries). First segments only — the prefix-dedup pass below drops
     // bare parent segments when a multi-segment child is present.
+    //
+    // Filter through the same feature-gate list so a feature-disabled
+    // parent section (e.g. "acp", "hardware") doesn't sneak back in via
+    // a nested map-keyed path.
     let map_keyed_roots: std::collections::HashSet<&'static str> = all_map_paths
         .iter()
         .filter_map(|p| p.split('.').next())
+        .filter(|prefix| {
+            !excluded.iter().any(|e| {
+                *prefix == e.as_str()
+                    || (e.ends_with('.') && prefix.starts_with(e.as_str()))
+            })
+        })
         .collect();
     for &prefix in &map_keyed_roots {
         roots.insert(prefix.to_string());
